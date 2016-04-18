@@ -1,0 +1,217 @@
+---
+title: 'PROJECT #3 for Applied Nonparametric Econometrics'
+author: "Jia Ru"
+date: '2016-4-18'
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE, cache = TRUE, results='hold', 
+  message = FALSE, warning = FALSE, error = FALSE)
+```
+
+# 1. Do Monte Carlo simulations to compare the performances of the local linear and local constant estimations 
+
+The nonparametric regression function is
+$$ Y_t = m(X_t) + u_t, \quad 1 \leq t \leq T $$
+where **$X_t$ is stationary**.Choose different sample sizes, different kernels, different bandwidths, and different bandwidth selection methods; Use MADE to measure the performance of estimation. Boxplot the distribution of MADE for different settings.
+
+ANS:
+
+Here I set DGP as: $X_t$ is IID follows Uniform distributon on $[0,3]$, $m(x)=e^x$, and $u_t$ is IID follows Standard Normal Distribution. I refer to *4.7 Computer Code in Lecture note, page 88* to define functions in order to get the local-constant and local-linear estimator, with a few modifications, that is: 1. set some default arugments: grid points is exactly sample point x, and bandwidth is 0.02 by default, kernel is normal by default for convenience; 2. modify the local.linear function by directly return the fitted value, ie. Intercept instead of the n-by-2 matrix beta. I also define functions to generate data under different settings and to calculate MADE.
+
+```{r 1.Define:ll,lc,DGP,MADE}
+rm(list=ls())
+EpanKer<-function(x){0.75*(1-x^2)*(abs(x)<=1)}
+
+# ####################################################
+# Define function of local constant estimator
+# ####################################################
+
+local.constant=function(y,x,z=x,h=0.02,ker="norm"){
+  nz <- length(z)
+  nx <- length(x)
+  x0 = rep(1,nx*nz)
+  dim(x0) = c(nx,nz)
+  x1 = t(x0)
+  x0 = x*x0
+  x1 = z*x1
+  x0 = x0-t(x1)
+  if(ker=="Epan"){x1=EpanKer(x0/h)}
+  if(ker=="norm"){x1=dnorm(x0/h)}
+  x2 = y*x1
+  f1 = apply(x1,2,mean)
+  f2 = apply(x2,2,mean)
+  f3 = f2/f1
+  
+  return(f3)  # return num[1:n]
+} 
+
+# ####################################################
+# Define the local linear estimator
+# ####################################################
+
+local.linear<-function(y,x,z=x,h=0.02,ker="norm"){
+  nz <- length(z)
+  ny <- length(y)
+  beta <- rep(0,nz*2)
+  dim(beta) <- c(nz,2)
+  for(k in 1:nz){
+    x0 = x-z[k]
+    if(ker=="Epan"){w0 <- EpanKer(x0/h)}
+    if(ker=="norm"){w0 <- dnorm(x0/h)}
+    beta[k,] <- glm(y~x0,weight=w0)$coeff
+  }
+  return(beta[,1])  
+}
+
+# ####################################################
+# Define function DGP: Data Generating Process
+# ####################################################
+
+DGP <- function(n,stationary=TRUE){
+  if (stationary==TRUE) {
+    x <- runif(n, min=0, max=3)
+    mx <- exp(x)
+    y <- mx + rnorm(n)
+  } else if (stationary==FALSE){
+    x <- runif(1, min = 0, max=3)
+    for (i in 2:n) {x[i] <- x[i-1]+rnorm(1)}
+    mx <- exp(x)
+    y <- mx
+  }
+  return(rbind(x,y,mx))
+}
+
+# ####################################################
+# Define function MADE, MADE_set
+# ####################################################
+
+# Generate One MADE
+MADE <- function(n,ker,h=0.02,stationary=T,method) {
+  sample <- DGP(n,stationary)
+  y <- sample["y",]
+  x <- sample["x",]
+  m <- sample["mx",]
+  m_hat <- 
+    if (method=="ll") {
+      local.linear(y,x,ker=ker,h=h)
+    } else if (method=="lc") {
+      local.constant(y,x,ker=ker,h=h)
+    }
+  MADE <- 1/n*sum(abs(m-m_hat))
+  return(MADE)
+}
+
+# Generate a set of n_sim MADEs
+library(plyr)
+MADE_set <- function(n_sim,
+                     n,ker,h=0.02,stationary=T,method)
+{
+  MADE_set <- laply(
+    .data = as.list(1:n_sim),
+    .fun = function(foo) MADE(n,ker,h,stationary,method),
+    .progress = "text"
+  )
+  return(MADE_set)
+}
+
+# test:
+# MADE_set(n_sim=10,
+#          n=20,ker="Epan",h=0.02,stationary = T,method="ll")
+```
+
+Now use `MADE_set()` function to do Monte Carlo Simulations:
+
+#### (1) different sample sizes
+
+```{r 1. MC_n, eval=FALSE}
+n_sim = 100
+n_set <- list(20,50,100,200,500)
+
+# 1. local linear
+MADE_n_ll <- laply(
+  .data = n_set,
+  .fun = function(x) {
+    yy <- MADE_set(n_sim=n_sim,n=x,ker="Epan",h=0.02,
+                  stationary = T,method="ll")
+    return(yy)
+  },
+  .progress = "text"
+)
+rownames(MADE_n_ll) <- paste0("n=",n_set)
+
+boxplot(MADE_n_ll,use.cols=F,outline=FALSE,
+        xlab="sample size",ylab="MADE")
+title("1-1-1 MADE of different sample sizes, Local Linear")
+
+# 2. local constant
+MADE_n_lc <- laply(
+  .data = n_set,
+  .fun = function(x) {
+    yy <- MADE_set(n_sim=n_sim,n=x,ker="Epan",h=0.02,
+                  stationary = T,method="lc")
+    return(yy)
+  },
+  .progress = "text"
+)
+rownames(MADE_n_lc) <- paste0("n=",n_set)
+boxplot(MADE_n_lc,use.cols=F,outline=FALSE,
+        xlab="sample size",ylab="MADE")
+title("1-1-2 MADE of different sample sizes, Local Constant")
+
+```
+![](1-1-1.pdf)
+![](1-1-2.pdf)
+
+Here I try 5 different sample sizes: 20,50,100,200,500. From the figure we can see, as sample size increase, both mean and standard variance of MADE decrease, it is the same for local constant method and local linear method.
+
+#### (2) different bandwidths
+
+```{r 1.MC_h, eval=FALSE}
+
+# 1. local linear
+n_sim = 20
+h_set <- as.list(seq(0.1,1.5,by=0.1))
+
+MADE_h_ll <- laply(
+  .data = h_set,
+  .fun = function(x) {
+    yy <- MADE_set(n_sim=n_sim,n=50,ker="Epan",h=x,
+                  stationary = T,method="ll")
+    return(yy)
+  },
+  .progress = "text"
+)
+rownames(MADE_h_ll) <- h_set
+
+boxplot(MADE_h_ll,use.cols=F,outline=FALSE,
+        xlab="bandwidth",ylab="MADE")
+title("1-2-1 MADE of different bandwidth, Local Linear")
+
+# 2. local constant
+n_sim = 20
+h_set <- as.list(seq(0.01,0.9,by=0.04))
+
+MADE_h_lc <- laply(
+  .data = h_set,
+  .fun = function(x) {
+    yy <- MADE_set(n_sim=n_sim,n=50,ker="Epan",h=x,
+                  stationary = T,method="lc")
+    return(yy)
+  },
+  .progress = "text"
+)
+rownames(MADE_h_lc) <- h_set
+
+boxplot(MADE_h_lc,use.cols=F,outline=FALSE,
+        xlab="bandwidth",ylab="MADE")
+title("1-2-2 MADE of different bandwidth, Local Constant")
+```
+
+![](1-2-1.pdf)
+![](1-2-2.pdf)
+
+from the two figure we can see, the best bandwidth for local constant method is approximately 0.2, the best bandwidth for local linear method is approximately 0.4.
+
