@@ -8,7 +8,7 @@ output: pdf_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(
   echo = TRUE, cache = TRUE, results='hold', 
-  message = FALSE, warning = FALSE, error = FALSE)
+  message = FALSE, warning = FALSE, error = FALSE, include = FALSE)
 ```
 
 # 1. Do Monte Carlo simulations to compare the performances of the local linear and local constant estimations 
@@ -21,7 +21,7 @@ ANS:
 
 Here I set DGP as: $X_t$ is IID follows Uniform distributon on $[0,3]$, $m(x)=e^x$, and $u_t$ is IID follows Standard Normal Distribution. I refer to *4.7 Computer Code in Lecture note, page 88* to define functions in order to get the local-constant and local-linear estimator, with a few modifications, that is: 1. set some default arugments: grid points is exactly sample point x, and bandwidth is 0.02 by default, kernel is normal by default for convenience; 2. modify the local.linear function by directly return the fitted value, ie. Intercept instead of the n-by-2 matrix beta. I also define functions to generate data under different settings and to calculate MADE.
 
-```{r 1.Define:ll,lc,DGP,MADE}
+```{r 1-0,eval=FALSE,include=T}
 rm(list=ls())
 EpanKer<-function(x){0.75*(1-x^2)*(abs(x)<=1)}
 
@@ -77,8 +77,8 @@ DGP <- function(n,stationary=TRUE){
     y <- mx + rnorm(n)
   } else if (stationary==FALSE){
     x <- runif(1, min = 0, max=3)
-    for (i in 2:n) {x[i] <- x[i-1]+rnorm(1)}
-    mx <- exp(x)
+    for (i in 2:n) {x[i] <- 0.1*x[i-1]+rnorm(1)}
+    mx <- x^2
     y <- mx
   }
   return(rbind(x,y,mx))
@@ -122,11 +122,11 @@ MADE_set <- function(n_sim,
 #          n=20,ker="Epan",h=0.02,stationary = T,method="ll")
 ```
 
-Now use `MADE_set()` function to do Monte Carlo Simulations:
+Now use `MADE_set()` function to do Monte Carlo Simulations: (Code hide)
 
-#### (1) different sample sizes
+#### 1-1 different sample sizes
 
-```{r 1. MC_n, eval=FALSE}
+```{r 1-1, eval=FALSE}
 n_sim = 100
 n_set <- list(20,50,100,200,500)
 
@@ -162,14 +162,15 @@ boxplot(MADE_n_lc,use.cols=F,outline=FALSE,
 title("1-1-2 MADE of different sample sizes, Local Constant")
 
 ```
+
 ![](1-1-1.pdf)
 ![](1-1-2.pdf)
 
 Here I try 5 different sample sizes: 20,50,100,200,500. From the figure we can see, as sample size increase, both mean and standard variance of MADE decrease, it is the same for local constant method and local linear method.
 
-#### (2) different bandwidths
+#### 1-2 different bandwidths
 
-```{r 1.MC_h, eval=FALSE}
+```{r 1-2, eval=FALSE}
 
 # 1. local linear
 n_sim = 20
@@ -215,3 +216,290 @@ title("1-2-2 MADE of different bandwidth, Local Constant")
 
 from the two figure we can see, the best bandwidth for local constant method is approximately 0.2, the best bandwidth for local linear method is approximately 0.4.
 
+#### 1-3 different kernels
+
+```{r 1-3, eval=FALSE}
+MADE_Epan_ll <- MADE_set(n_sim=30,n=50,ker="Epan",h=0.4,
+                  stationary = T,method="ll")
+MADE_Norm_ll <- MADE_set(n_sim=30,n=50,ker="norm",h=0.4,
+                  stationary = T,method="ll")
+MADE_Epan_lc <- MADE_set(n_sim=30,n=50,ker="Epan",h=0.2,
+                  stationary = T,method="lc")
+MADE_Norm_lc <- MADE_set(n_sim=30,n=50,ker="norm",h=0.2,
+                  stationary = T,method="lc")
+MADE_ker <- rbind(MADE_Epan_ll,MADE_Norm_ll,MADE_Epan_lc,MADE_Epan_lc)
+rownames(MADE_ker) <- c("Epan_ll","Norm_ll","Epan_lc","Norm_lc")
+boxplot(MADE_ker,use.cols=F,outline=FALSE,
+        xlab="different kernels & different method",ylab="MADE")
+title("1-3 different kernels & different method")
+
+```
+
+![](1-3.pdf)
+
+from the figure we can see, Epan kernel with local linear method performs best. But local constant method has smaller variance. Here I use different bandwidth for the two method which is "best" in terms of MADE, obtained in last question.
+
+
+# 2. Re-consider Question 1, where $X_t$ is nonstationary 
+
+All the operation is the same as in Question 1, except that the data generating process is:
+$$ X_t = 0.1 X_{t-1} + v_t $$
+where $v_t$ is iid standard normal. And $Y_t$ is 
+$$ Y_t = X_t^2 + u_t $$
+
+(Codes hide)
+
+#### 2-1 different sample sizes
+![](2-1-1.pdf)
+![](2-1-2.pdf)
+
+It is totally different from the stationary case that as sample size increase, the MADE also increase. This is because of serial correlation of $X_t$. The local linear method seems to have smaller MADE for all sample sizes.
+
+#### 2-2 different bandwidths
+
+![](2-2-1.pdf)
+![](2-2-2.pdf)
+
+from the two figure we can see, the optimal bandwidth seem to be as small as possible.(I have tried even smaller bandwidth but it's almost the same pattern). 
+
+#### 2-3 different kernels
+
+![](2-3.pdf)
+
+from the figure we can see, Epan kernel with local linear method has smallest MADE.
+
+
+# 3. Empirical Analysis: The nonlinearity of spread of interest rates 
+
+I download 1-Year Treasury Constant Maturity Rate from <https://research.stlouisfed.org/fred2/series/WGS1YR#> and 3-Year Treasury Constant Maturity Rate from <https://research.stlouisfed.org/fred2/series/WGS3YR#>. 
+
+First of all, take an overlook at the data. Plot $r_{1t}$, $r_{3t}$, $s_t$ and $s^\star_t$. The data looks like this:
+
+```{r 3-0, include=T, eval=T, echo=F,results="hold"}
+
+rm(list=ls())
+require(readxl)
+require(ggplot2)
+
+WGS1YR <- read_excel("Q3_data/WGS1YR.xls", 
+                     col_names = c("date","r1"), skip=11)
+WGS3YR <- read_excel("Q3_data/WGS3YR.xls", 
+                     col_names = c("date","r3"), skip=11)
+WGS <- merge(WGS1YR, WGS3YR, by="date", all=TRUE)
+WGS <- mutate(WGS, logr1=log(r1), logr3=log(r3), s=logr3-logr1)
+WGS$s_star <- c(NA,WGS$s[-1]-WGS$s[-nrow(WGS)])
+WGS$time <- 1:nrow(WGS)
+
+p1 <- ggplot(data = WGS, mapping = aes(x=date)) +
+  geom_line(aes(y=r1), col="red", alpha=0.8) +
+  geom_line(aes(y=r3), col="orange", alpha=0.8) +
+  annotate("text", label = "r1", x = WGS$date[1], y = 5, size = 5, colour = "red")+
+  annotate("text", label = "r3", x = WGS$date[1], y = 6, size = 5, colour = "orange")+
+  ylab("r1 & r3") +
+  ggtitle("1-Year & 3-Year Treasury Constant Maturity Rate, loged")
+p1
+
+p2 <- ggplot(data=WGS, aes(x=date,y=s)) + 
+  geom_line(col="blue") +
+  ggtitle("log interest rate spread s")
+p2
+
+p3 <- ggplot(data=WGS, aes(x=date,y=s_star)) + 
+  geom_line(col="darkolivegreen") +
+  #scale_y_continuous(limits = c(-0.2,0.2)) +
+  ggtitle("first-order difference of log interest rate spread")
+p3
+
+```
+
+To study if $\{s_t\}$ is nonlinear, I try different nonparametric regression model and do analysis of variance to test whether local linear model is suitable. Since the $\{s_t\}$ is time series, I first see the ACF and PACF plot of the series. From the ACF plot we can see, the auto-correlation is significant positive and very large for all lag less than about 100 while the 1st-order lag is almost 0.9, so I construct the regression model using only 1st-order lag as explainatory variable:
+$$ s_t = m(s_{t-1}) + \epsilon_t $$
+Here I use `dyn` and `loess` package in R to do the regression. Use `anova()` to test Hypothesis.
+
+```{r 3-1, include=T,eval=T,results="hold"}
+require(np)
+require(loess)
+require(locfit)
+library(dyn)
+
+#####################  1. s   ######################
+st <- ts(WGS$s)
+
+# ACF and PACF
+par(mfrow=c(2,2))
+acf(st, lag.max = nrow(WGS), main="ACF of s")
+pacf(st, lag.max = nrow(WGS), main="PACF of s")
+acf(st, main="ACF of s")
+pacf(st, main="PACF of s")
+
+# noneparametric regression
+np_l <- dyn$loess(st ~ lag(st, -1),degree=1)  # local linear
+np_nl <- dyn$loess(st ~ lag(st, -1),degree=2)  # local polynomial
+fitted_l <- fitted(np_l)
+fitted_nl <- fitted(np_nl)
+
+# visialization
+ggplot(data=NULL, aes(x=st[-1],y=st[-length(st)])) + 
+  geom_rug(alpha=0.3) +
+  geom_point() +
+  geom_smooth(method="lm") +
+  geom_line(aes(y=fitted_l), col="green",alpha=0.7) +
+  geom_line(aes(y=fitted_nl), col="red", alpha=0.7) +
+  xlab("lag st") +
+  ylab("st") +
+  ggtitle("3 regression of s[t] on s[t-1]")
+
+# Hypothesis Testing
+anova(np_l,np_nl)[-1]
+```
+
+Results:
+
+the linear and nonlinear approach gives almost the same result and very close to the sample point except some outliers. The Hypothesis Testing result show that we have to **reject** the null hypothesis that ${s_t}$ is linear under the significance level 0.05.
+
+For series $s^\star_t$ do the same thing:
+
+```{r 3-2, include=T,eval=T,results="hold"}
+#####################  2. s_star   ######################
+st <- ts(WGS$s_star)[-1]
+
+# ACF and PACF
+par(mfrow=c(2,2))
+acf(st, lag.max = nrow(WGS), main="ACF of s_star")
+pacf(st, lag.max = nrow(WGS), main="PACF of s_star")
+acf(st, main="ACF of s_star")
+pacf(st, main="PACF of s_star")
+
+# nonparametrci regression
+lm <- lm(st ~ lag(st, -1))
+np_l <- dyn$loess(st ~ lag(st, -1),degree=1)
+np_nl <- dyn$loess(st ~ lag(st, -1),degree=2)
+fitted_l <- fitted(np_l)
+fitted_nl <- fitted(np_nl)
+fitted_lm <- fitted(lm)
+
+# visalization
+ggplot(data=NULL, aes(x=st[-1],y=st[-length(st)])) + 
+  geom_rug(alpha=0.3) +
+  geom_point(alpha=0.2) +
+  geom_smooth(method="lm") +
+  geom_line(aes(y=fitted_l[-1]), col="green",alpha=0.7) +
+  geom_line(aes(y=fitted_nl[-1]), col="red", alpha=0.7) +
+  xlab("lag s_star") +
+  ylab("s_star") +
+  ggtitle("3 regression of s_star[t] on s_star[t-1]")
+
+# Hypothesis Testing
+anova(np_l,np_nl)[-1]
+
+```
+
+Results:
+
+the linear and nonlinear approach gives exactly the same result, but from the scatter plot we can see the joint distribution of $s^{\star}_t$ and $s^{\star}_{t-1}$ is clustered at point $(0,0)$, so the both the nonparametric models and paramethric linear model does not fit well. The Hypothesis Testing result show that we **reject** the null hypothesis that ${s^\star_t}$ is linear under the significance level 0.05.
+
+
+
+# 4. Consider three real data sets for the U.S. Treasury bill (Secondary Market Rate): the **daily, weekly and monthly** 3-month Treasury bill.
+
+First let's see what the datas look like:
+
+```{r 4-0}
+
+rm(list = ls())
+
+require(ggplot2)
+require(lubridate)
+
+daily <- read.csv(file="Project_3_DATA/DTB3.csv", 
+                  header = T, na.strings = ".", stringsAsFactors = F)
+weekly <- read.csv(file="Project_3_DATA/WTB3MS.csv", 
+                  header = T, na.strings = ".", stringsAsFactors = F)
+monthly <- read.csv(file="Project_3_DATA/TB4WK.csv", 
+                  header = T, na.strings = ".", stringsAsFactors = F)
+daily$DATE <- as.Date(daily$DATE)
+monthly$DATE <- as.Date(monthly$DATE)
+weekly$DATE <- as.Date(weekly$DATE)
+
+m <- ts(monthly$VALUE, 
+        start = c(year(monthly$DATE[1]), month(monthly$DATE[1])), 
+        frequency = 12)
+w <- ts(weekly$VALUE, 
+        start = c(year(weekly$DATE[1]), week(weekly$DATE[1])),
+        frequency = 52)
+d <- ts(daily$VALUE, 
+        start = c(year(daily$DATE[1]), month(daily$DATE[1]), day(daily$DATE[1])), 
+        frequency = 365)
+
+par(mfrow=c(3,1))
+ts.plot(m, main="monthly")
+ts.plot(w, main="weekly")
+ts.plot(d, main="daily")
+# 
+# qplot(x=DATE, y=VALUE, data = daily, geom="line", main = "daily")
+# qplot(x=DATE, y=VALUE, data = monthly, geom="line", main = "monthly")
+# qplot(x=DATE, y=VALUE, data = weekly, geom="line", main = "weekly")
+```
+
+![](4-0.pdf)
+
+### 4-1. Apply the nonparametric regression estimation methods to estimate the drift and diffusion functions for each series and higher moments such as skewedness and kurtosis.
+
+I will use the function `ksdrift` and `ksdiff`  in R package `sde` , whose description in the document is "Implementation of simple Nadaraya-Watson nonparametric estimation of drift and diffusion coefficient", the default bandwidth is calculated using Scott’s rule (i.e., $bandwidth = n^{-1/5}*sd(x)$). The estimation code and result is plot as follows:
+
+```{r 4-1}
+
+require(plyr)
+require(sde)
+
+drift_diffussion <- function(x) {
+  drift <- ksdrift(x)
+  diffusion <- ksdiff(x)
+
+  plot(drift, type="l", main="drift")
+  plot(diffusion, type="l", main="diffusion")
+}
+
+d_new <- na.locf(d)   # replacing each NA with the most recent non-NA prior to it.
+par(mfrow=c(3,2))
+l_ply(.data=list(m,w,d_new), 
+      .fun=drift_diffussion,
+      .progress = "text"
+      )
+```
+
+(First row is **monthly** data, second is **weekly**, the bottom line is **daily**.)
+
+![](4-1.pdf)
+
+Next we estimate the skewness and kurtoiss of the 3 data: Here I use `skewness` and `kurtosis` function in `moments` package:
+
+```{r 4-1_, include=T, results="markup"}
+
+require(moments)
+
+skewness(m); kurtosis(m)
+skewness(w);kurtosis(w)
+skewness(d, na.rm = T);kurtosis(d, na.rm = T)
+
+```
+
+### 4-2. Any conclusions and comments on three drift and diffusion functions? Also, think about your conclusions on whether a jump diffusion model is appropriate for the data; see Johannes (2004).
+
+I use R command `BNSjumptest` in package `highfreqency`to test the presence of jumps. It is Barndorff- Nielsen and Shephard (2006) tests for the presence of jumps in the price series,which examines the presence of jumps in highfrequency price series. It is based on theory of Barndorff- Nielsen and Shephard (BNS). The null hypothesis is no jumps.
+
+The test result is that we **reject** the null hypothesis, i.e we consider there exist jumps in the series of intrest rates.
+
+```{r 4-2,include=T, results="markup"}
+require(highfrequency)
+
+BNSjumptest(m)
+BNSjumptest(w)
+BNSjumptest(d_new)
+
+
+```
+
+<!--
+### 4-3. Compare your results with results in Ait-Sahalia (1996), Jiang and Knight (1997), and Stanton (1997).
+-->
